@@ -12,6 +12,23 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 
+
+class Autoencoder(nn.Module):
+    
+    def __init__(self):
+        super(Autoencoder, self).__init__()
+        
+        
+        
+        
+class Transitioner(nn.Module):
+    
+    def __init__(self):
+        super(Transitioner, self).__init__()
+
+
+
+
 class Actor(nn.Module):
     
     def __init__(

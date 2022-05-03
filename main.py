@@ -2,12 +2,8 @@ import gym
 import time
 import torch
 import numpy as np
-import random
 import keyboard
-import matplotlib.pyplot as plt
-from collections import namedtuple, deque
-import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # pyplot crashes without this
+from collections import deque
 
 from utils import args, list_mean, plot_losses
 from model import Agent
@@ -64,29 +60,7 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
         print('\rEpisode {} Reward: {:.2f}  Average100 Score: {:.2f}'.format(i_episode, score, np.mean(scores_deque)), end="")
         if i_episode % print_every == 0:
             print('\rEpisode {}  Reward: {:.2f}  Average100 Score: {:.2f}'.format(i_episode, score, np.mean(scores_deque)))
-            
-    torch.save(agent.actor_local.state_dict(), args.info + ".pt")
-    
-
-
-
-def play():
-    agent.actor_local.eval()
-    for i_episode in range(1):
-
-        state = env.reset()
-        state = state.reshape((1,state_size))
-
-        while True:
-            action = agent.act(state)
-            action_v = action[0].numpy()
-            action_v = np.clip(action_v*action_high, action_low, action_high)
-            next_state, reward, done, info = env.step(action_v)
-            next_state = next_state.reshape((1,state_size))
-            state = next_state
-
-            if done:
-                break 
+                
     
 
 
@@ -107,11 +81,7 @@ if __name__ == "__main__":
     action_size = env.action_space.shape[0]
     agent = Agent(state_size=state_size, action_size=action_size,hidden_size=HIDDEN_SIZE, action_prior="uniform") #"normal"
     
-    if saved_model != None:
-        agent.actor_local.load_state_dict(torch.load(saved_model))
-        play()
-    else:    
-        SAC(n_episodes=args.ep, max_t=500, print_every=args.print_every)
+    SAC(n_episodes=args.ep, max_t=500, print_every=args.print_every)
     t1 = time.time()
     env.close()
     print("training took {} min!".format((t1-t0)/60))

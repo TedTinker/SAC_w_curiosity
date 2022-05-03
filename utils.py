@@ -5,7 +5,6 @@ env_name = "Pendulum-v1"
 
 parser = argparse.ArgumentParser(description="")
 parser.add_argument("-env", type=str,default=env_name, help="Environment name")
-parser.add_argument("-info", type=str, default = "Ted", help="Information or name of the run")
 parser.add_argument("-ep", type=int, default=100, help="The amount of training episodes, default is 100")
 parser.add_argument("-lr", type=float, default=5e-4, help="Learning rate of adapting the network weights, default is 5e-4")
 parser.add_argument("-a", "--alpha", type=float, help="entropy alpha value, if not choosen the value is leaned by the agent")
@@ -21,6 +20,8 @@ args = parser.parse_args()
 
 
 import matplotlib.pyplot as plt
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # plt crashes without this
 
 def list_mean(l):
     l = [l_ for l_ in l if l_ != None]
