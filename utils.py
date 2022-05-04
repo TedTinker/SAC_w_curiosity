@@ -36,26 +36,43 @@ def get_x_y(losses):
     return(x, y)
 
     
-def plot_losses(alpha_losses, actor_losses, critic1_losses, critic2_losses):
+def plot_losses(auto_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses):
+    auto_x, auto_y = get_x_y(auto_losses)
     alpha_x, alpha_y = get_x_y(alpha_losses)
     actor_x, actor_y = get_x_y(actor_losses)
     critic1_x, critic1_y = get_x_y(critic1_losses)
     critic2_x, critic2_y = get_x_y(critic2_losses)
     
-    plt.plot(alpha_x, alpha_y, color = "black")
+    # First plot auto_loss and trans_loss
+    fig, ax1 = plt.subplots()
     plt.xlabel("Epochs")
-    plt.ylabel("Alpha losses")
+
+    ax1.plot(auto_x, auto_y, color = "yellow", label = "Auto")
+    ax1.set_ylabel("Auto losses")
+    ax1.legend(loc = 'upper left')
+    fig.tight_layout()
     plt.show()
     
+    
+    # Then plot losses for actor, critics, alpha
     fig, ax1 = plt.subplots()
+    plt.xlabel("Epochs")
+
     ax1.plot(actor_x, actor_y, color='red', label = "Actor")
+    ax1.set_ylabel("Actor losses")
+    ax1.legend(loc = 'upper left')
+
     ax2 = ax1.twinx()
     ax2.plot(critic1_x, critic1_y, color='blue', linestyle = "--", label = "Critic")
     ax2.plot(critic2_x, critic2_y, color='blue', linestyle = ":", label = "Critic")
-    fig.tight_layout()
-    plt.xlabel("Epochs")
-    ax1.set_ylabel("Actor losses")
     ax2.set_ylabel("Critic losses")
-    ax1.legend(loc = 'upper left')
     ax2.legend(loc = 'lower left')
+    
+    ax3 = ax1.twinx()
+    ax3.spines.right.set_position(("axes", 1.2))
+    ax3.plot(alpha_x, alpha_y, color = "black", label = "Alpha")
+    ax3.set_ylabel("Alpha losses")
+    ax3.legend(loc = 'upper right')
+    
+    fig.tight_layout()
     plt.show()

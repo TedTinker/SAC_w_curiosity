@@ -15,8 +15,27 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Autoencoder(nn.Module):
     
-    def __init__(self):
+    def __init__(
+            self, 
+            state_size,
+            hidden_size=32):
         super(Autoencoder, self).__init__()
+        
+        self.encode = nn.Sequential(
+            nn.Linear(state_size, hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.LeakyReLU())
+        
+        self.decode = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_size, state_size))
+        
+    def forward(self, x):
+        encoding = self.encode(x)
+        decoding = self.decode(encoding)
+        return(encoding, decoding)
         
         
         
@@ -102,6 +121,12 @@ class Critic(nn.Module):
     
 
 if __name__ == "__main__":
+    
+    autoencoder = Autoencoder(2)
+    print("\n\n")
+    print(autoencoder)
+    print()
+    print(torch_summary(autoencoder, (1, 2)))
 
     actor = Actor(2, 1)
     print("\n\n")
@@ -136,6 +161,9 @@ class Agent():
         self.log_alpha = torch.tensor([0.0], requires_grad=True)
         self.alpha_optimizer = optim.Adam(params=[self.log_alpha], lr=args.lr) 
         self._action_prior = action_prior
+        
+        self.autoencoder = Autoencoder(state_size, hidden_size)
+        self.autoencoder_optimizer = optim.Adam(self.autoencoder.parameters(), lr=args.lr)     
                 
         self.actor_local = Actor(state_size, action_size, hidden_size).to(device)
         self.actor_optimizer = optim.Adam(self.actor_local.parameters(), lr=args.lr)     
@@ -156,10 +184,10 @@ class Agent():
         self.memory.add(state, action, reward, next_state, done)
         if len(self.memory) > args.batch_size:
             experiences = self.memory.sample()
-            alpha_loss, actor_loss, critic1_loss, critic2_loss = \
+            auto_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
                 self.learn(step, experiences, args.gamma)
-            return(alpha_loss, actor_loss, critic1_loss, critic2_loss)
-        return(None, None, None, None)
+            return(auto_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
+        return(None, None, None, None, None)
             
     def act(self, state):
         state = torch.from_numpy(state).float().to(device)
@@ -181,6 +209,14 @@ class Agent():
         """
         states, actions, rewards, next_states, dones = experiences
         
+        # Train autoencoder
+        _, decoded = self.autoencoder(states)
+        auto_loss = F.mse_loss(decoded, states)
+        self.autoencoder_optimizer.zero_grad()
+        auto_loss.backward()
+        self.autoencoder_optimizer.step()
+        
+        # Train critics
         next_action, log_pis_next = self.actor_local.evaluate(next_states)
         Q_target1_next = self.critic1_target(next_states.to(device), next_action.squeeze(0).to(device))
         Q_target2_next = self.critic2_target(next_states.to(device), next_action.squeeze(0).to(device))
@@ -202,6 +238,7 @@ class Agent():
         critic2_loss.backward()
         self.critic2_optimizer.step()
         
+        # Train actor
         if step % d == 0:
             if args.alpha == None:
                 self.alpha = torch.exp(self.log_alpha)
@@ -245,12 +282,13 @@ class Agent():
             alpha_loss = None
             actor_loss = None
         
+        if(auto_loss != None): auto_loss = auto_loss.item()
         if(alpha_loss != None): alpha_loss = alpha_loss.item()
         if(actor_loss != None): actor_loss = actor_loss.item()
         if(critic1_loss != None): critic1_loss = critic1_loss.item()
         if(critic2_loss != None): critic2_loss = critic2_loss.item()
 
-        return(alpha_loss, actor_loss, critic1_loss, critic2_loss)
+        return(auto_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
                      
     def soft_update(self, local_model, target_model, tau):
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
