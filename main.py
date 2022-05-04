@@ -14,15 +14,15 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
     global env
     scores_deque = deque(maxlen=100)
     average_100_scores = []
-    auto_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses = \
-        [], [], [], [], []
+    auto_losses, trans_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses = \
+        [], [], [], [], [], []
 
     for i_episode in range(1, n_episodes+1):
         state = env.reset()
         state = state.reshape((1,state_size))
         score = 0
-        auto_losses_, alpha_losses_, actor_losses_, critic1_losses_, critic2_losses_ = \
-            [], [], [], [], []
+        auto_losses_, trans_losses_, alpha_losses_, actor_losses_, critic1_losses_, critic2_losses_ = \
+            [], [], [], [], [], []
         for t in range(max_t):
             if(keyboard.is_pressed('q')): env.render()
             action = agent.act(state)
@@ -30,9 +30,10 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
             action_v = np.clip(action_v*action_high, action_low, action_high)
             next_state, reward, done, info = env.step(action_v)
             next_state = next_state.reshape((1,state_size))
-            auto_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
+            auto_loss, trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
                 agent.step(state, action, reward, next_state, done, t)
             auto_losses_.append(auto_loss)
+            trans_losses_.append(trans_loss)
             alpha_losses_.append(alpha_loss)
             actor_losses_.append(actor_loss)
             critic1_losses_.append(critic1_loss)
@@ -42,17 +43,19 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
 
             if done:
                 auto_losses_ = list_mean(auto_losses_)
+                trans_losses_ = list_mean(trans_losses_)
                 alpha_losses_ = list_mean(alpha_losses_)
                 actor_losses_ = list_mean(actor_losses_)
                 critic1_losses_ = list_mean(critic1_losses_)
                 critic2_losses_ = list_mean(critic2_losses_)
 
                 auto_losses.append(auto_losses_)
+                trans_losses.append(trans_losses_)
                 alpha_losses.append(alpha_losses_)
                 actor_losses.append(actor_losses_)
                 critic1_losses.append(critic1_losses_)
                 critic2_losses.append(critic2_losses_)
-                plot_losses(auto_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses)
+                plot_losses(auto_losses, trans_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses)
                 break 
         
         env.close()
