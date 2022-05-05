@@ -33,10 +33,14 @@ class Autoencoder(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(hidden_size, state_size))
         
+    def just_encode(self, x):
+        encoding = self.encode(x)
+        return(encoding)
+        
     def forward(self, x):
         encoding = self.encode(x)
         decoding = self.decode(encoding)
-        return(encoding, decoding)
+        return(decoding)
         
         
         
@@ -45,13 +49,14 @@ class Transitioner(nn.Module):
     
     def __init__(
             self, 
+            encode_size,
             state_size,
             action_size, 
             hidden_size=32):
         super(Transitioner, self).__init__()
         
         self.lin = nn.Sequential(
-            nn.Linear(state_size+action_size, hidden_size),
+            nn.Linear(encode_size+action_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.LeakyReLU(),
@@ -60,8 +65,8 @@ class Transitioner(nn.Module):
             nn.Linear(hidden_size, state_size))
     
         
-    def forward(self, state, action):
-        x = torch.cat((state, action), dim=1)
+    def forward(self, encode, action):
+        x = torch.cat((encode, action), dim=1)
         next_state = self.lin(x)
         return(next_state)
 
@@ -72,7 +77,7 @@ class Actor(nn.Module):
     
     def __init__(
             self, 
-            state_size, 
+            encode_size, 
             action_size, 
             hidden_size=32, 
             log_std_min=-20, 
@@ -82,22 +87,22 @@ class Actor(nn.Module):
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
         self.lin = nn.Sequential(
-            nn.Linear(state_size, hidden_size),
+            nn.Linear(encode_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.LeakyReLU())
         self.mu = nn.Linear(hidden_size, action_size)
         self.log_std_linear = nn.Linear(hidden_size, action_size)
 
-    def forward(self, state):
-        x = self.lin(state)
+    def forward(self, encode):
+        x = self.lin(encode)
         mu = self.mu(x)
         log_std = self.log_std_linear(x)
         log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
         return mu, log_std
     
-    def evaluate(self, state, epsilon=1e-6):
-        mu, log_std = self.forward(state)
+    def evaluate(self, encode, epsilon=1e-6):
+        mu, log_std = self.forward(encode)
         std = log_std.exp()
         dist = Normal(0, 1)
         e = dist.sample().to(device)
@@ -106,8 +111,8 @@ class Actor(nn.Module):
             torch.log(1 - action.pow(2) + epsilon)
         return action, log_prob
         
-    def get_action(self, state):
-        mu, log_std = self.forward(state)
+    def get_action(self, encode):
+        mu, log_std = self.forward(encode)
         std = log_std.exp()
         dist = Normal(0, 1)
         e      = dist.sample().to(device)
@@ -120,20 +125,20 @@ class Critic(nn.Module):
 
     def __init__(
             self, 
-            state_size, 
+            encode_size, 
             action_size, 
             hidden_size=32):
         
         super(Critic, self).__init__()
         self.lin = nn.Sequential(
-            nn.Linear(state_size+action_size, hidden_size),
+            nn.Linear(encode_size+action_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, 1))
 
-    def forward(self, state, action):
-        x = torch.cat((state, action), dim=1)
+    def forward(self, encode, action):
+        x = torch.cat((encode, action), dim=1)
         x = self.lin(x)
         return x
     
@@ -156,6 +161,7 @@ class Agent():
             encode_size,
             action_prior="uniform"):
         
+        self.encode_size = encode_size
         self.state_size = state_size 
         self.action_size = action_size
         self.hidden_size = hidden_size
@@ -172,20 +178,20 @@ class Agent():
         self.autoencoder = Autoencoder(state_size, hidden_size, encode_size)
         self.autoencoder_optimizer = optim.Adam(self.autoencoder.parameters(), lr=args.lr)     
            
-        self.transitioner = Transitioner(state_size, action_size, hidden_size)
+        self.transitioner = Transitioner(encode_size, state_size, action_size, hidden_size)
         self.trans_optimizer = optim.Adam(self.transitioner.parameters(), lr=args.lr)     
         
-        self.actor = Actor(state_size, action_size, hidden_size).to(device)
+        self.actor = Actor(encode_size, action_size, hidden_size).to(device)
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args.lr)     
         
-        self.critic1 = Critic(state_size, action_size, hidden_size).to(device)
+        self.critic1 = Critic(encode_size, action_size, hidden_size).to(device)
         self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=args.lr, weight_decay=0)
-        self.critic1_target = Critic(state_size, action_size,hidden_size).to(device)
+        self.critic1_target = Critic(encode_size, action_size,hidden_size).to(device)
         self.critic1_target.load_state_dict(self.critic1.state_dict())
 
-        self.critic2 = Critic(state_size, action_size, hidden_size).to(device)
+        self.critic2 = Critic(encode_size, action_size, hidden_size).to(device)
         self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=args.lr, weight_decay=0) 
-        self.critic2_target = Critic(state_size, action_size,hidden_size).to(device)
+        self.critic2_target = Critic(encode_size, action_size,hidden_size).to(device)
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
         self.memory = ReplayBuffer(action_size, int(args.memory), args.batch_size)
@@ -203,7 +209,8 @@ class Agent():
             
     def act(self, state):
         state = torch.from_numpy(state).float().to(device)
-        action = self.actor.get_action(state).detach()
+        encoded = self.autoencoder.just_encode(state)
+        action = self.actor.get_action(encoded).detach()
         return action
 
     def learn(self, step, experiences, gamma, d=2):
@@ -222,36 +229,39 @@ class Agent():
         states, actions, rewards, next_states, dones = experiences
         
         # Train autoencoder
-        _, decoded = self.autoencoder(states)
+        decoded = self.autoencoder(states)
         auto_loss = F.mse_loss(decoded, states)
         self.autoencoder_optimizer.zero_grad()
         auto_loss.backward()
         self.autoencoder_optimizer.step()
         
+        encoded = self.autoencoder.just_encode(states).detach()
+        next_encoded = self.autoencoder.just_encode(next_states).detach()
+        
         # Train transitioner
-        pred_next_states = self.transitioner(states, actions)
+        pred_next_states = self.transitioner(encoded, actions)
         trans_loss = F.mse_loss(pred_next_states, next_states)
         self.trans_optimizer.zero_grad()
         trans_loss.backward()
         self.trans_optimizer.step()
         
         # Train critics
-        next_action, log_pis_next = self.actor.evaluate(next_states)
-        Q_target1_next = self.critic1_target(next_states.to(device), next_action.squeeze(0).to(device))
-        Q_target2_next = self.critic2_target(next_states.to(device), next_action.squeeze(0).to(device))
+        next_action, log_pis_next = self.actor.evaluate(next_encoded)
+        Q_target1_next = self.critic1_target(next_encoded.to(device), next_action.squeeze(0).to(device))
+        Q_target2_next = self.critic2_target(next_encoded.to(device), next_action.squeeze(0).to(device))
         Q_target_next = torch.min(Q_target1_next, Q_target2_next)
         if args.alpha == None:
             Q_targets = rewards.cpu() + (gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - self.alpha * log_pis_next.squeeze(0).cpu()))
         else:
             Q_targets = rewards.cpu() + (gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - args.alpha * log_pis_next.squeeze(0).cpu()))
         
-        Q_1 = self.critic1(states, actions).cpu()
+        Q_1 = self.critic1(encoded, actions).cpu()
         critic1_loss = 0.5*F.mse_loss(Q_1, Q_targets.detach())
         self.critic1_optimizer.zero_grad()
         critic1_loss.backward()
         self.critic1_optimizer.step()
         
-        Q_2 = self.critic2(states, actions).cpu()
+        Q_2 = self.critic2(encoded, actions).cpu()
         critic2_loss = 0.5*F.mse_loss(Q_2, Q_targets.detach())
         self.critic2_optimizer.zero_grad()
         critic2_loss.backward()
@@ -261,7 +271,7 @@ class Agent():
         if step % d == 0:
             if args.alpha == None:
                 self.alpha = torch.exp(self.log_alpha)
-                actions_pred, log_pis = self.actor.evaluate(states)
+                actions_pred, log_pis = self.actor.evaluate(encoded)
                 alpha_loss = -(self.log_alpha.cpu() * (log_pis.cpu() + self.target_entropy).detach().cpu()).mean()
                 self.alpha_optimizer.zero_grad()
                 alpha_loss.backward()
@@ -273,13 +283,13 @@ class Agent():
                 elif self._action_prior == "uniform":
                     policy_prior_log_probs = 0.0
                 Q = torch.min(
-                    self.critic1(states, actions_pred.squeeze(0)), 
-                    self.critic2(states, actions_pred.squeeze(0)))
+                    self.critic1(encoded, actions_pred.squeeze(0)), 
+                    self.critic2(encoded, actions_pred.squeeze(0)))
                 actor_loss = (self.alpha * log_pis.squeeze(0).cpu() - Q.cpu() - policy_prior_log_probs).mean()
             
             else:
                 alpha_loss = None
-                actions_pred, log_pis = self.actor.evaluate(states)
+                actions_pred, log_pis = self.actor.evaluate(encoded)
                 if self._action_prior == "normal":
                     policy_prior = MultivariateNormal(loc=torch.zeros(self.action_size), scale_tril=torch.ones(self.action_size).unsqueeze(0))
                     policy_prior_log_probs = policy_prior.log_prob(actions_pred)
@@ -332,17 +342,17 @@ def describe_agent(agent):
     print("\n\n")
     print(agent.transitioner)
     print()
-    print(torch_summary(agent.transitioner, ((1, agent.state_size),(1,agent.action_size))))
+    print(torch_summary(agent.transitioner, ((1, agent.encode_size),(1,agent.action_size))))
 
     print("\n\n")
     print(agent.actor)
     print()
-    print(torch_summary(agent.actor, (1, agent.state_size)))
+    print(torch_summary(agent.actor, (1, agent.encode_size)))
     
     print("\n\n")
     print(agent.critic1)
     print()
-    print(torch_summary(agent.critic1, ((1, agent.state_size),(1,agent.action_size))))
+    print(torch_summary(agent.critic1, ((1, agent.encode_size),(1,agent.action_size))))
     
 if __name__ == "__main__":
     agent = Agent(
