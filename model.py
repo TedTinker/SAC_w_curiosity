@@ -18,17 +18,18 @@ class Autoencoder(nn.Module):
     def __init__(
             self, 
             state_size,
-            hidden_size=32):
+            hidden_size=32,
+            encode_size=32):
         super(Autoencoder, self).__init__()
         
         self.encode = nn.Sequential(
             nn.Linear(state_size, hidden_size),
             nn.LeakyReLU(),
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(hidden_size, encode_size),
             nn.LeakyReLU())
         
         self.decode = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(encode_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, state_size))
         
@@ -176,6 +177,7 @@ class Agent():
             state_size, 
             action_size, 
             hidden_size, 
+            encode_size,
             action_prior="uniform"):
 
         self.state_size = state_size
@@ -187,7 +189,7 @@ class Agent():
         self.alpha_optimizer = optim.Adam(params=[self.log_alpha], lr=args.lr) 
         self._action_prior = action_prior
         
-        self.autoencoder = Autoencoder(state_size, hidden_size)
+        self.autoencoder = Autoencoder(state_size, hidden_size, encode_size)
         self.autoencoder_optimizer = optim.Adam(self.autoencoder.parameters(), lr=args.lr)     
            
         self.transitioner = Transitioner(state_size, action_size, hidden_size)
@@ -206,7 +208,7 @@ class Agent():
         self.critic2_target = Critic(state_size, action_size,hidden_size).to(device)
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.memory = ReplayBuffer(action_size, int(args.replay_memory), args.batch_size)
+        self.memory = ReplayBuffer(action_size, int(args.memory), args.batch_size)
         
     def step(self, state, action, reward, next_state, done, step):
         self.memory.add(state, action, reward, next_state, done)

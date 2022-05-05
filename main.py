@@ -59,7 +59,7 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
                 break 
         
         env.close()
-        env = gym.make(env_name)
+        env = gym.make(args.env)
         scores_deque.append(score)
         average_100_scores.append(np.mean(scores_deque))
         
@@ -73,21 +73,20 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
 
 
 if __name__ == "__main__":
-    env_name = args.env
-    n_episodes = args.ep
-    HIDDEN_SIZE = args.layer_size
-    FIXED_ALPHA = args.alpha
-    saved_model = args.saved_model
-    
     t0 = time.time()
-    env = gym.make(env_name)
+    env = gym.make(args.env)
     action_high = env.action_space.high[0]
     action_low = env.action_space.low[0]
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.shape[0]
-    agent = Agent(state_size=state_size, action_size=action_size,hidden_size=HIDDEN_SIZE, action_prior="uniform") #"normal"
+    agent = Agent(
+        state_size=state_size, 
+        action_size=action_size,
+        hidden_size=args.hidden_size,
+        encode_size=args.encode_size,
+        action_prior="uniform") #"normal"
     
-    SAC(n_episodes=args.ep, max_t=500, print_every=args.print_every)
+    SAC(n_episodes=args.episodes, max_t=500, print_every=args.print_every)
     t1 = time.time()
     env.close()
     print("training took {} min!".format((t1-t0)/60))
