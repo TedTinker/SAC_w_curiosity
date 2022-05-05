@@ -6,7 +6,7 @@ import torch.optim as optim
 from torchinfo import summary as torch_summary
 
 from utils import args
-from buffer import ReplayBuffer
+from buffer import ReplayBuffer, RecurrentReplayBuffer
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -169,11 +169,13 @@ class Agent():
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
         self.memory = ReplayBuffer(action_size, int(args.memory), args.batch_size)
+        self.r_memory = RecurrentReplayBuffer(state_size, action_size, max_episode_len = 10000)
         
         describe_agent(self)
         
     def step(self, state, action, reward, next_state, done, step):
         self.memory.add(state, action, reward, next_state, done)
+        self.r_memory.push(state, action, reward, next_state, done, done)
         if len(self.memory) > args.batch_size:
             experiences = self.memory.sample()
             trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
