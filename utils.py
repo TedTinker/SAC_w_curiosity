@@ -48,14 +48,12 @@ def get_x_y(losses):
 
     
 def plot_losses(
-        auto_losses, 
         trans_losses, 
         alpha_losses, 
         actor_losses, 
         critic1_losses, 
         critic2_losses):
     
-    auto_x, auto_y = get_x_y(auto_losses)
     trans_x, trans_y = get_x_y(trans_losses)
     alpha_x, alpha_y = get_x_y(alpha_losses)
     actor_x, actor_y = get_x_y(actor_losses)
@@ -63,22 +61,12 @@ def plot_losses(
     critic2_x, critic2_y = get_x_y(critic2_losses)
     
     # First plot auto_loss and trans_loss
-    fig, ax1 = plt.subplots()
     plt.xlabel("Epochs")
-
-    ax1.plot(auto_x, auto_y, color = "yellow", label = "Auto")
-    ax1.set_ylabel("Auto losses")
-    ax1.legend(loc = 'upper left')
-    
-    ax2 = ax1.twinx()
-    ax2.plot(trans_x, trans_y, color = "green", label = "Trans")
-    ax2.set_ylabel("Trans losses")
-    ax2.legend(loc = 'upper right')
-    fig.tight_layout()
+    plt.plot(trans_x, trans_y, color = "green", label = "Trans")
+    plt.ylabel("Trans losses")
+    plt.legend(loc = 'upper left')
     plt.show()
     
-    fig.tight_layout()
-    plt.show()
     
     
     # Then plot losses for actor, critics, alpha

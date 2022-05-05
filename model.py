@@ -13,14 +13,15 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 
-class Autoencoder(nn.Module):
+class Transitioner(nn.Module):
     
     def __init__(
             self, 
             state_size,
+            action_size,
             hidden_size=32,
             encode_size=32):
-        super(Autoencoder, self).__init__()
+        super(Transitioner, self).__init__()
         
         self.encode = nn.Sequential(
             nn.Linear(state_size, hidden_size),
@@ -28,47 +29,23 @@ class Autoencoder(nn.Module):
             nn.Linear(hidden_size, encode_size),
             nn.LeakyReLU())
         
-        self.decode = nn.Sequential(
-            nn.Linear(encode_size, hidden_size),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_size, state_size))
-        
-    def just_encode(self, x):
-        encoding = self.encode(x)
-        return(encoding)
-        
-    def forward(self, x):
-        encoding = self.encode(x)
-        decoding = self.decode(encoding)
-        return(decoding)
-        
-        
-        
-        
-class Transitioner(nn.Module):
-    
-    def __init__(
-            self, 
-            encode_size,
-            state_size,
-            action_size, 
-            hidden_size=32):
-        super(Transitioner, self).__init__()
-        
-        self.lin = nn.Sequential(
+        self.next_state = nn.Sequential(
             nn.Linear(encode_size+action_size, hidden_size),
             nn.LeakyReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.LeakyReLU(),
             nn.Linear(hidden_size, state_size))
-    
         
-    def forward(self, encode, action):
-        x = torch.cat((encode, action), dim=1)
-        next_state = self.lin(x)
+    def just_encode(self, state):
+        encoding = self.encode(state)
+        return(encoding)
+        
+    def forward(self, state, action):
+        encoding = self.encode(state)
+        x = torch.cat((encoding, action), dim=1)
+        next_state = self.next_state(x)
         return(next_state)
+        
+        
+
 
 
 
@@ -175,12 +152,9 @@ class Agent():
         self.alpha_optimizer = optim.Adam(params=[self.log_alpha], lr=args.lr) 
         self._action_prior = action_prior
         
-        self.autoencoder = Autoencoder(state_size, hidden_size, encode_size)
-        self.autoencoder_optimizer = optim.Adam(self.autoencoder.parameters(), lr=args.lr)     
-           
-        self.transitioner = Transitioner(encode_size, state_size, action_size, hidden_size)
+        self.transitioner = Transitioner(state_size, action_size, hidden_size, encode_size)
         self.trans_optimizer = optim.Adam(self.transitioner.parameters(), lr=args.lr)     
-        
+                   
         self.actor = Actor(encode_size, action_size, hidden_size).to(device)
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=args.lr)     
         
@@ -202,14 +176,14 @@ class Agent():
         self.memory.add(state, action, reward, next_state, done)
         if len(self.memory) > args.batch_size:
             experiences = self.memory.sample()
-            auto_loss, trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
+            trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
                 self.learn(step, experiences, args.gamma)
-            return(auto_loss, trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
-        return(None, None, None, None, None, None)
+            return(trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
+        return(None, None, None, None, None)
             
     def act(self, state):
         state = torch.from_numpy(state).float().to(device)
-        encoded = self.autoencoder.just_encode(state)
+        encoded = self.transitioner.just_encode(state)
         action = self.actor.get_action(encoded).detach()
         return action
 
@@ -228,22 +202,17 @@ class Agent():
         """
         states, actions, rewards, next_states, dones = experiences
         
-        # Train autoencoder
-        decoded = self.autoencoder(states)
-        auto_loss = F.mse_loss(decoded, states)
-        self.autoencoder_optimizer.zero_grad()
-        auto_loss.backward()
-        self.autoencoder_optimizer.step()
-        
-        encoded = self.autoencoder.just_encode(states).detach()
-        next_encoded = self.autoencoder.just_encode(next_states).detach()
-        
         # Train transitioner
-        pred_next_states = self.transitioner(encoded, actions)
+        pred_next_states = self.transitioner(states, actions)
         trans_loss = F.mse_loss(pred_next_states, next_states)
         self.trans_optimizer.zero_grad()
         trans_loss.backward()
         self.trans_optimizer.step()
+        
+        encoded = self.transitioner.just_encode(states).detach()
+        next_encoded = self.transitioner.just_encode(next_states).detach()
+        
+
         
         # Train critics
         next_action, log_pis_next = self.actor.evaluate(next_encoded)
@@ -311,7 +280,6 @@ class Agent():
             alpha_loss = None
             actor_loss = None
         
-        if(auto_loss != None): auto_loss = auto_loss.item()
         if(trans_loss != None): trans_loss = trans_loss.item()
         if(alpha_loss != None): alpha_loss = alpha_loss.item()
         if(actor_loss != None): actor_loss = actor_loss.item()
@@ -319,7 +287,6 @@ class Agent():
         if(critic2_loss != None): critic2_loss = critic2_loss.item()
 
         return(
-            auto_loss, 
             trans_loss, 
             alpha_loss, 
             actor_loss, 
@@ -335,15 +302,10 @@ class Agent():
 
 def describe_agent(agent):
     print("\n\n")
-    print(agent.autoencoder)
-    print()
-    print(torch_summary(agent.autoencoder, (1, agent.state_size)))
-    
-    print("\n\n")
     print(agent.transitioner)
     print()
-    print(torch_summary(agent.transitioner, ((1, agent.encode_size),(1,agent.action_size))))
-
+    print(torch_summary(agent.transitioner, ((1, agent.state_size),(1,agent.action_size))))
+    
     print("\n\n")
     print(agent.actor)
     print()
