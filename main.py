@@ -21,11 +21,12 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
         state = env.reset()
         state = state.reshape((1,state_size))
         score = 0
+        hidden = None
         trans_losses_, alpha_losses_, actor_losses_, critic1_losses_, critic2_losses_ = \
             [], [], [], [], []
         for t in range(max_t):
             if(keyboard.is_pressed('q')): env.render()
-            action = agent.act(state)
+            action, hidden = agent.act(state, hidden)
             action_v = action.numpy()
             action_v = np.clip(action_v*action_high, action_low, action_high)
             next_state, reward, done, info = env.step(action_v)

@@ -6,7 +6,7 @@ env_name = "Pendulum-v1"
 parser = argparse.ArgumentParser(description="")
 parser.add_argument("-env",         type=str,   default=env_name, 
                     help="Environment name")
-parser.add_argument("-episodes",    type=int,   default=100, 
+parser.add_argument("-episodes",    type=int,   default=300, 
                     help="The amount of training episodes, default is 100")
 parser.add_argument("-lr",          type=float, default=5e-4, 
                     help="Learning rate of adapting the network weights, default is 5e-4")
@@ -18,7 +18,7 @@ parser.add_argument("-encode_size", type=int,   default=4,
                     help="Number of nodes per neural network layer, default is 256")
 parser.add_argument("-memory",      type=int,   default=int(1e6), 
                     help="Size of the Replay memory, default is 1e6")
-parser.add_argument("-batch_size",  type=int,   default=256, 
+parser.add_argument("-batch_size",  type=int,   default=4, 
                     help="Batch size, default is 256")
 parser.add_argument("-tau",         type=float, default=1e-2, 
                     help="Softupdate factor tau, default is 1e-2")

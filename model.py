@@ -6,7 +6,7 @@ import torch.optim as optim
 from torchinfo import summary as torch_summary
 
 from utils import args
-from buffer import ReplayBuffer, RecurrentReplayBuffer
+from buffer import RecurrentReplayBuffer
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -23,9 +23,16 @@ class Transitioner(nn.Module):
             encode_size=32):
         super(Transitioner, self).__init__()
         
-        self.encode = nn.Sequential(
+        self.encode_1 = nn.Sequential(
             nn.Linear(state_size, hidden_size),
-            nn.LeakyReLU(),
+            nn.LeakyReLU())
+        
+        self.lstm = nn.LSTM(
+            input_size = hidden_size, 
+            hidden_size = hidden_size,
+            batch_first=True)
+        
+        self.encode_2 = nn.Sequential(
             nn.Linear(hidden_size, encode_size),
             nn.LeakyReLU())
         
@@ -34,15 +41,25 @@ class Transitioner(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(hidden_size, state_size))
         
-    def just_encode(self, state):
-        encoding = self.encode(state)
-        return(encoding)
+    def just_encode(self, x, hidden = None):
+        if(len(x.shape) == 2):  sequence = False
+        else:                   sequence = True
+        x = self.encode_1(x)
+        if(not sequence):
+            x = x.view(x.shape[0], 1, x.shape[1])
+        self.lstm.flatten_parameters()
+        if(hidden == None): x, hidden = self.lstm(x)
+        else:               x, hidden = self.lstm(x, (hidden[0], hidden[1]))
+        if(not sequence):
+            x = x.view(x.shape[0], x.shape[-1])
+        encoding = self.encode_2(x)
+        return(encoding, hidden)
         
-    def forward(self, state, action):
-        encoding = self.encode(state)
-        x = torch.cat((encoding, action), dim=1)
+    def forward(self, state, action, hidden = None):
+        encoding, hidden = self.just_encode(state, hidden)
+        x = torch.cat((encoding, action), dim=-1)
         next_state = self.next_state(x)
-        return(next_state)
+        return(next_state, hidden)
         
         
 
@@ -115,7 +132,7 @@ class Critic(nn.Module):
             nn.Linear(hidden_size, 1))
 
     def forward(self, encode, action):
-        x = torch.cat((encode, action), dim=1)
+        x = torch.cat((encode, action), dim=-1)
         x = self.lin(x)
         return x
     
@@ -168,58 +185,45 @@ class Agent():
         self.critic2_target = Critic(encode_size, action_size,hidden_size).to(device)
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.memory = ReplayBuffer(action_size, int(args.memory), args.batch_size)
-        self.r_memory = RecurrentReplayBuffer(state_size, action_size, max_episode_len = 10000)
+        self.memory = RecurrentReplayBuffer(state_size, action_size, max_episode_len = 10000)
         
         describe_agent(self)
         
     def step(self, state, action, reward, next_state, done, step):
-        self.memory.add(state, action, reward, next_state, done)
-        self.r_memory.push(state, action, reward, next_state, done, done)
-        if len(self.memory) > args.batch_size:
+        self.memory.push(state, action, reward, next_state, done, done)
+        if self.memory.num_episodes > args.batch_size:
             experiences = self.memory.sample()
             trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
                 self.learn(step, experiences, args.gamma)
             return(trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
         return(None, None, None, None, None)
             
-    def act(self, state):
+    def act(self, state, hidden = None):
         state = torch.from_numpy(state).float().to(device)
-        encoded = self.transitioner.just_encode(state)
+        encoded, hidden = self.transitioner.just_encode(state, hidden)
         action = self.actor.get_action(encoded).detach()
-        return action
+        return action, hidden
 
     def learn(self, step, experiences, gamma, d=2):
-        """Updates actor, critics and entropy_alpha parameters using given batch of experience tuples.
-        Q_targets = r + γ * (min_critic_target(next_state, actor_target(next_state)) - α *log_pi(next_action|next_state))
-        Critic_loss = MSE(Q, Q_target)
-        Actor_loss = α * log_pi(a|s) - Q(s,a)
-        where:
-            actor_target(state) -> action
-            critic_target(state, action) -> Q-value
-        Params
-        ======
-            experiences (Tuple[torch.Tensor]): tuple of (s, a, r, s', done) tuples 
-            gamma (float): discount factor
-        """
-        states, actions, rewards, next_states, dones = experiences
+
+        states, actions, rewards, dones, _ = experiences
         
         # Train transitioner
-        pred_next_states = self.transitioner(states, actions)
-        trans_loss = F.mse_loss(pred_next_states, next_states)
+        pred_next_states, _ = self.transitioner(states[:,:-1], actions)
+        trans_loss = F.mse_loss(pred_next_states, states[:,1:])
         self.trans_optimizer.zero_grad()
         trans_loss.backward()
         self.trans_optimizer.step()
         
-        encoded = self.transitioner.just_encode(states).detach()
-        next_encoded = self.transitioner.just_encode(next_states).detach()
-        
-
+        encoded, _ = self.transitioner.just_encode(states[:,:-1])
+        encoded = encoded.detach()
+        next_encoded, _ = self.transitioner.just_encode(states[:,1:])
+        next_encoded = next_encoded.detach()
         
         # Train critics
         next_action, log_pis_next = self.actor.evaluate(next_encoded)
-        Q_target1_next = self.critic1_target(next_encoded.to(device), next_action.squeeze(0).to(device))
-        Q_target2_next = self.critic2_target(next_encoded.to(device), next_action.squeeze(0).to(device))
+        Q_target1_next = self.critic1_target(next_encoded.to(device), next_action.to(device))
+        Q_target2_next = self.critic2_target(next_encoded.to(device), next_action.to(device))
         Q_target_next = torch.min(Q_target1_next, Q_target2_next)
         if args.alpha == None:
             Q_targets = rewards.cpu() + (gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - self.alpha * log_pis_next.squeeze(0).cpu()))
@@ -254,8 +258,8 @@ class Agent():
                 elif self._action_prior == "uniform":
                     policy_prior_log_probs = 0.0
                 Q = torch.min(
-                    self.critic1(encoded, actions_pred.squeeze(0)), 
-                    self.critic2(encoded, actions_pred.squeeze(0)))
+                    self.critic1(encoded, actions_pred), 
+                    self.critic2(encoded, actions_pred))
                 actor_loss = (self.alpha * log_pis.squeeze(0).cpu() - Q.cpu() - policy_prior_log_probs).mean()
             
             else:
