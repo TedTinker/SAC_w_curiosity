@@ -53,12 +53,12 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
                 actor_losses.append(actor_losses_)
                 critic1_losses.append(critic1_losses_)
                 critic2_losses.append(critic2_losses_)
-                plot_losses(trans_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses)
+                scores_deque.append(score)
+                plot_losses(scores_deque, trans_losses, alpha_losses, actor_losses, critic1_losses, critic2_losses)
                 break 
         
         env.close()
         env = gym.make(args.env)
-        scores_deque.append(score)
         average_100_scores.append(np.mean(scores_deque))
         
         print('\rEpisode {} Reward: {:.2f}  Average100 Score: {:.2f}'.format(i_episode, score, np.mean(scores_deque)), end="")

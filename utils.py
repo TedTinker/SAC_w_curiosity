@@ -50,6 +50,7 @@ def get_x_y(losses):
 
     
 def plot_losses(
+        scores,
         trans_losses, 
         alpha_losses, 
         actor_losses, 
@@ -62,7 +63,13 @@ def plot_losses(
     critic1_x, critic1_y = get_x_y(critic1_losses)
     critic2_x, critic2_y = get_x_y(critic2_losses)
     
-    # First plot auto_loss and trans_loss
+    # Plot rewards
+    plt.plot(scores)
+    plt.xlabel("Episodes")
+    plt.ylabel("Score")
+    plt.show()
+    
+    # Plot trans_loss
     plt.xlabel("Epochs")
     plt.plot(trans_x, trans_y, color = "green", label = "Trans")
     plt.ylabel("Trans losses")
@@ -71,7 +78,7 @@ def plot_losses(
     
     
     
-    # Then plot losses for actor, critics, alpha
+    # Plot losses for actor, critics, and alpha
     fig, ax1 = plt.subplots()
     plt.xlabel("Epochs")
 
