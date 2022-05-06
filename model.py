@@ -24,22 +24,24 @@ class Transitioner(nn.Module):
         super(Transitioner, self).__init__()
         
         self.encode_1 = nn.Sequential(
-            nn.Linear(state_size, hidden_size),
+            nn.Linear(state_size, 32),
             nn.LeakyReLU())
         
         self.lstm = nn.LSTM(
-            input_size = hidden_size, 
-            hidden_size = hidden_size,
+            input_size = 32, 
+            hidden_size = 32,
             batch_first=True)
         
         self.encode_2 = nn.Sequential(
-            nn.Linear(hidden_size, encode_size),
+            nn.Linear(32, encode_size),
             nn.LeakyReLU())
         
-        self.next_state = nn.Sequential(
+        self.decode = nn.Sequential(
             nn.Linear(encode_size+action_size, hidden_size),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_size, state_size))
+            nn.LeakyReLU())
+        
+        self.mu = nn.Linear(hidden_size, state_size)
+        self.log_std_linear = nn.Linear(hidden_size, state_size)
         
     def just_encode(self, x, hidden = None):
         if(len(x.shape) == 2):  sequence = False
@@ -58,10 +60,23 @@ class Transitioner(nn.Module):
     def forward(self, state, action, hidden = None):
         encoding, hidden = self.just_encode(state, hidden)
         x = torch.cat((encoding, action), dim=-1)
-        next_state = self.next_state(x)
+        decoding = self.decode(x)
+        mu = self.mu(decoding)
+        log_std = self.log_std_linear(decoding)
+        return(mu, log_std, hidden)
+    
+    def get_next_state(self, state, action, hidden = None):
+        mu, log_std, hidden = self.forward(state, action, hidden)
+        std = log_std.exp()
+        dist = Normal(0, 1)
+        e      = dist.sample().to(device)
+        next_state = torch.tanh(mu + e * std).cpu()
         return(next_state, hidden)
         
-        
+    def probability(self, next_state, state, action, hidden = None):
+        mu, log_std, hidden = self.forward(state, action, hidden)
+        std = log_std.exp()
+        return(torch.zeros((action.shape[0],action.shape[1],1)))
 
 
 
@@ -216,7 +231,7 @@ class Agent():
         states, actions, rewards, dones, _ = experiences
         
         # Train transitioner
-        pred_next_states, _ = self.transitioner(states[:,:-1], actions)
+        pred_next_states, _ = self.transitioner.get_next_state(states[:,:-1], actions)
         trans_loss = F.mse_loss(pred_next_states, states[:,1:])
         self.trans_optimizer.zero_grad()
         trans_loss.backward()
@@ -226,6 +241,10 @@ class Agent():
         encoded = encoded.detach()
         next_encoded, _ = self.transitioner.just_encode(states[:,1:])
         next_encoded = next_encoded.detach()
+        
+        # Update rewards with curiosity
+        curiosity = self.transitioner.probability(states[:,1:], states[:,:-1], actions)
+        rewards += curiosity
         
         # Train critics
         next_action, log_pis_next = self.actor.evaluate(next_encoded)
