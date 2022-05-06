@@ -32,7 +32,7 @@ class RecurrentReplayBuffer:
         self,
         o_dim,
         a_dim,
-        max_episode_len = 500,  # this will also serve as num_bptt
+        max_episode_len = 201,  # this will also serve as num_bptt
         segment_len=None,  # for non-overlapping truncated bptt, maybe need a large batch size
         capacity=10000,
         batch_size=args.batch_size,

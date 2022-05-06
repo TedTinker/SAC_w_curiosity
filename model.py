@@ -155,7 +155,7 @@ class Agent():
             encode_size,
             action_prior="uniform"):
         
-        self.trains = 0
+        self.training = 0
         
         self.encode_size = encode_size
         self.state_size = state_size 
@@ -208,9 +208,9 @@ class Agent():
 
     def learn(self, step, experiences, gamma, d=2):
         
-        self.trains += 1
+        self.training += 1
         
-        if(self.trains % args.train_frames != 0):
+        if(self.training % args.train_frames != 0):
             return(None, None, None, None, None)
 
         states, actions, rewards, dones, _ = experiences

@@ -18,9 +18,9 @@ parser.add_argument("-encode_size", type=int,   default=4,
                     help="Number of nodes per neural network layer, default is 256")
 parser.add_argument("-memory",      type=int,   default=int(1e6), 
                     help="Size of the Replay memory, default is 1e6")
-parser.add_argument("-batch_size",  type=int,   default=4, 
+parser.add_argument("-batch_size",  type=int,   default=8, 
                     help="Batch size, default is 256")
-parser.add_argument("-train_frames",type=int,   default=4, 
+parser.add_argument("-train_frames",type=int,   default=1, 
                     help="Frames per epoch")
 parser.add_argument("-tau",         type=float, default=1e-2, 
                     help="Softupdate factor tau, default is 1e-2")
