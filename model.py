@@ -5,6 +5,9 @@ from torch.distributions import Normal, MultivariateNormal
 import torch.optim as optim
 from torchinfo import summary as torch_summary
 
+import scipy.stats 
+sf = scipy.stats.norm.sf
+
 from utils import args
 from buffer import RecurrentReplayBuffer
 
@@ -76,7 +79,11 @@ class Transitioner(nn.Module):
     def probability(self, next_state, state, action, hidden = None):
         mu, log_std, hidden = self.forward(state, action, hidden)
         std = log_std.exp()
-        return(torch.zeros((action.shape[0],action.shape[1],1)))
+        z = torch.abs((next_state - mu)/std).detach().numpy()
+        p = sf(z)*args.eta
+        p = p[:,:,0] * p[:,:,1] * p[:,:,2]
+        p = torch.tensor(p)
+        return(p.unsqueeze(-1))
 
 
 
