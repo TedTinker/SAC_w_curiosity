@@ -22,8 +22,8 @@ parser.add_argument("-memory",      type=int,   default=int(1e6),
                     help="Size of the Replay memory, default is 1e6")
 parser.add_argument("-batch_size",  type=int,   default=8, 
                     help="Batch size, default is 256")
-parser.add_argument("-train_frames",type=int,   default=1, 
-                    help="Frames per epoch")
+parser.add_argument("-d",           type=int,   default=2, 
+                    help="Actor delay")
 parser.add_argument("-tau",         type=float, default=1e-2, 
                     help="Softupdate factor tau, default is 1e-2")
 parser.add_argument("-gamma",       type=float, default=0.99, 
@@ -37,6 +37,14 @@ args = parser.parse_args()
 import matplotlib.pyplot as plt
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # plt crashes without this
+
+import torch
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+if(device.type == "cpu"):   print("\n\nAAAAAAAUGH! CPU! >:C\n")
+else:                       print("\n\nUsing CUDA! :D\n")
+
+
 
 def list_mean(l):
     l = [l_ for l_ in l if l_ != None]

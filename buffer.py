@@ -1,13 +1,8 @@
-import gin
-
 from collections import namedtuple
 import numpy as np
 import torch
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 from basics.utils import get_device
-from utils import args
+from utils import args, device
 
 
 
@@ -23,7 +18,6 @@ def as_tensor_on_device(np_array: np.array):
     return torch.tensor(np_array).float().to(get_device())
 
 
-@gin.configurable(module=__name__)
 class RecurrentReplayBuffer:
 
     """Use this version when num_bptt == max_episode_len"""

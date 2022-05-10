@@ -8,10 +8,8 @@ from torchinfo import summary as torch_summary
 import scipy.stats 
 sf = scipy.stats.norm.sf
 
-from utils import args
+from utils import args, device
 from buffer import RecurrentReplayBuffer
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 
@@ -45,6 +43,7 @@ class Transitioner(nn.Module):
         
         self.mu = nn.Linear(hidden_size, state_size)
         self.log_std_linear = nn.Linear(hidden_size, state_size)
+        self.to(device)
         
     def just_encode(self, x, hidden = None):
         if(len(x.shape) == 2):  sequence = False
@@ -79,7 +78,7 @@ class Transitioner(nn.Module):
     def probability(self, next_state, state, action, hidden = None):
         mu, log_std, hidden = self.forward(state, action, hidden)
         std = log_std.exp()
-        z = torch.abs((next_state - mu)/std).detach().numpy()
+        z = torch.abs((next_state - mu)/std).detach().cpu().numpy()
         p = sf(z)*args.eta
         p = p[:,:,0] * p[:,:,1] * p[:,:,2]
         p = torch.tensor(p)
@@ -109,6 +108,7 @@ class Actor(nn.Module):
             nn.LeakyReLU())
         self.mu = nn.Linear(hidden_size, action_size)
         self.log_std_linear = nn.Linear(hidden_size, action_size)
+        self.to(device)
 
     def forward(self, encode):
         x = self.lin(encode)
@@ -152,6 +152,8 @@ class Critic(nn.Module):
             nn.Linear(hidden_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, 1))
+        
+        self.to(device)
 
     def forward(self, encode, action):
         x = torch.cat((encode, action), dim=-1)
@@ -177,7 +179,7 @@ class Agent():
             encode_size,
             action_prior="uniform"):
         
-        self.training = 0
+        self.steps = 0
         
         self.encode_size = encode_size
         self.state_size = state_size 
@@ -216,9 +218,8 @@ class Agent():
     def step(self, state, action, reward, next_state, done, step):
         self.memory.push(state, action, reward, next_state, done, done)
         if self.memory.num_episodes > args.batch_size:
-            experiences = self.memory.sample()
             trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
-                self.learn(step, experiences, args.gamma)
+                self.learn()
             return(trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
         return(None, None, None, None, None)
             
@@ -228,18 +229,20 @@ class Agent():
         action = self.actor.get_action(encoded).detach()
         return action, hidden
 
-    def learn(self, step, experiences, gamma, d=2):
+    def learn(self):
         
-        self.training += 1
-        
-        if(self.training % args.train_frames != 0):
+        try:
+            experiences = self.memory.sample()
+        except:
             return(None, None, None, None, None)
+        
+        self.steps += 1
 
         states, actions, rewards, dones, _ = experiences
         
         # Train transitioner
         pred_next_states, _ = self.transitioner.get_next_state(states[:,:-1], actions)
-        trans_loss = F.mse_loss(pred_next_states, states[:,1:])
+        trans_loss = F.mse_loss(pred_next_states.to(device), states[:,1:])
         self.trans_optimizer.zero_grad()
         trans_loss.backward()
         self.trans_optimizer.step()
@@ -251,7 +254,7 @@ class Agent():
         
         # Update rewards with curiosity
         curiosity = self.transitioner.probability(states[:,1:], states[:,:-1], actions)
-        rewards += curiosity
+        rewards += curiosity.to(device)
         
         # Train critics
         next_action, log_pis_next = self.actor.evaluate(next_encoded)
@@ -259,9 +262,9 @@ class Agent():
         Q_target2_next = self.critic2_target(next_encoded.to(device), next_action.to(device))
         Q_target_next = torch.min(Q_target1_next, Q_target2_next)
         if args.alpha == None:
-            Q_targets = rewards.cpu() + (gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - self.alpha * log_pis_next.squeeze(0).cpu()))
+            Q_targets = rewards.cpu() + (args.gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - self.alpha * log_pis_next.squeeze(0).cpu()))
         else:
-            Q_targets = rewards.cpu() + (gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - args.alpha * log_pis_next.squeeze(0).cpu()))
+            Q_targets = rewards.cpu() + (args.gamma * (1 - dones.cpu()) * (Q_target_next.cpu() - args.alpha * log_pis_next.squeeze(0).cpu()))
         
         Q_1 = self.critic1(encoded, actions).cpu()
         critic1_loss = 0.5*F.mse_loss(Q_1, Q_targets.detach())
@@ -276,7 +279,7 @@ class Agent():
         self.critic2_optimizer.step()
         
         # Train actor
-        if step % d == 0:
+        if self.steps % args.d == 0:
             if args.alpha == None:
                 self.alpha = torch.exp(self.log_alpha)
                 actions_pred, log_pis = self.actor.evaluate(encoded)
@@ -361,4 +364,3 @@ if __name__ == "__main__":
         action_size = 1, 
         hidden_size = args.hidden_size, 
         encode_size = args.encode_size)
-    describe_agent(agent)

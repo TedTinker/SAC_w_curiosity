@@ -8,8 +8,6 @@ from collections import deque
 from utils import args, list_mean, plot_losses
 from model import Agent
 
-
-
 def SAC(n_episodes=200, max_t=500, print_every=10):
     global env
     scores_deque = deque(maxlen=100)
@@ -25,7 +23,7 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
         trans_losses_, alpha_losses_, actor_losses_, critic1_losses_, critic2_losses_ = \
             [], [], [], [], []
         for t in range(max_t):
-            if(keyboard.is_pressed('q')): env.render()
+            #if(keyboard.is_pressed('q')): env.render()
             action, hidden = agent.act(state, hidden)
             action_v = action.numpy()
             action_v = np.clip(action_v*action_high, action_low, action_high)
