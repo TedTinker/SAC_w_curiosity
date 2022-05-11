@@ -78,7 +78,7 @@ class Transitioner(nn.Module):
     def DKL(self, state, next_state, action, hidden = None):
         predictions, hidden = self.get_next_state(state, action, hidden)
         divergence = nn.KLDivLoss(reduction="none")(predictions, next_state.cpu())
-        divergence = divergence[:,:,0] + divergence[:,:,1] + divergence[:,:,2]
+        divergence = sum([divergence[:,:,i] for i in range(divergence.shape[-1])])
         return(divergence.unsqueeze(-1))
 
 
