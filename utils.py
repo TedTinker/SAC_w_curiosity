@@ -12,7 +12,7 @@ parser.add_argument("-lr",          type=float, default=5e-4,
                     help="Learning rate of adapting the network weights, default is 5e-4")
 parser.add_argument("-alpha",       type=float, 
                     help="entropy alpha value, if not choosen the value is leaned by the agent")
-parser.add_argument("-eta",         type=float, default = 6,
+parser.add_argument("-eta",         type=float, default = .5,
                     help="curiosity value")
 parser.add_argument("-hidden_size", type=int,   default=256, 
                     help="Number of nodes per neural network layer, default is 256")

@@ -75,14 +75,11 @@ class Transitioner(nn.Module):
         next_state = torch.tanh(mu + e * std).cpu()
         return(next_state, hidden)
         
-    def probability(self, next_state, state, action, hidden = None):
-        mu, log_std, hidden = self.forward(state, action, hidden)
-        std = log_std.exp()
-        z = torch.abs((next_state - mu)/std).detach().cpu().numpy()
-        p = sf(z)*args.eta
-        p = p[:,:,0] * p[:,:,1] * p[:,:,2]
-        p = torch.tensor(p)
-        return(p.unsqueeze(-1))
+    def DKL(self, state, next_state, action, hidden = None):
+        predictions, hidden = self.get_next_state(state, action, hidden)
+        divergence = nn.KLDivLoss(reduction="none")(predictions, next_state.cpu())
+        divergence = divergence[:,:,0] + divergence[:,:,1] + divergence[:,:,2]
+        return(divergence.unsqueeze(-1))
 
 
 
@@ -253,7 +250,7 @@ class Agent():
         next_encoded = next_encoded.detach()
         
         # Update rewards with curiosity
-        curiosity = self.transitioner.probability(states[:,1:], states[:,:-1], actions)
+        curiosity = args.eta * self.transitioner.DKL(states[:,:-1], states[:,1:], actions)
         rewards += curiosity.to(device)
         
         # Train critics
