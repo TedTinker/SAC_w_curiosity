@@ -18,14 +18,14 @@ class Transitioner(nn.Module):
     
     def __init__(
             self, 
-            state_size,
+            obs_size,
             action_size,
             hidden_size=32,
             encode_size=32):
         super(Transitioner, self).__init__()
         
         self.encode_1 = nn.Sequential(
-            nn.Linear(state_size, 32),
+            nn.Linear(obs_size, 32),
             nn.LeakyReLU())
         
         self.lstm = nn.LSTM(
@@ -34,15 +34,13 @@ class Transitioner(nn.Module):
             batch_first=True)
         
         self.encode_2 = nn.Sequential(
+            nn.LeakyReLU(),
             nn.Linear(32, encode_size),
             nn.LeakyReLU())
         
-        self.decode = nn.Sequential(
-            nn.Linear(encode_size+action_size, hidden_size),
-            nn.LeakyReLU())
-        
-        self.mu = nn.Linear(hidden_size, state_size)
-        self.log_std_linear = nn.Linear(hidden_size, state_size)
+        self.next_obs = nn.Sequential(
+            nn.Linear(encode_size+action_size, obs_size))
+
         self.to(device)
         
     def just_encode(self, x, hidden = None):
@@ -59,25 +57,22 @@ class Transitioner(nn.Module):
         encoding = self.encode_2(x)
         return(encoding, hidden)
         
-    def forward(self, state, action, hidden = None):
-        encoding, hidden = self.just_encode(state, hidden)
+    def forward(self, obs, action, hidden = None):
+        encoding, hidden = self.just_encode(obs, hidden)
         x = torch.cat((encoding, action), dim=-1)
-        decoding = self.decode(x)
-        mu = self.mu(decoding)
-        log_std = self.log_std_linear(decoding)
-        return(mu, log_std, hidden)
+        next_obs = self.next_obs(x)
+        return(next_obs, hidden)
     
-    def get_next_state(self, state, action, hidden = None):
-        mu, log_std, hidden = self.forward(state, action, hidden)
-        std = log_std.exp()
-        dist = Normal(0, 1)
-        e      = dist.sample().to(device)
-        next_state = torch.tanh(mu + e * std).cpu()
-        return(next_state, hidden)
+    def get_next_obs(self, obs, action, hidden = None):
+        next_obs, hidden = self.forward(obs, action, hidden)
+        return(next_obs, hidden)
         
-    def DKL(self, state, next_state, action, hidden = None):
-        predictions, hidden = self.get_next_state(state, action, hidden)
-        divergence = nn.KLDivLoss(reduction="none")(predictions, next_state.cpu())
+    def DKL(self, obs, next_obs, action, hidden = None):
+        predictions, hidden = self.get_next_obs(obs, action, hidden)
+        divergence = F.kl_div(
+            F.log_softmax(predictions.cpu(), dim=-1), 
+            F.log_softmax(next_obs.cpu(), dim=-1), 
+            reduction="none", log_target=True)
         divergence = sum([divergence[:,:,i] for i in range(divergence.shape[-1])])
         return(divergence.unsqueeze(-1))
 
@@ -170,7 +165,7 @@ class Agent():
     
     def __init__(
             self, 
-            state_size, 
+            obs_size, 
             action_size, 
             hidden_size, 
             encode_size,
@@ -179,11 +174,11 @@ class Agent():
         self.steps = 0
         
         self.encode_size = encode_size
-        self.state_size = state_size 
+        self.obs_size = obs_size 
         self.action_size = action_size
         self.hidden_size = hidden_size
 
-        self.state_size = state_size
+        self.obs_size = obs_size
         self.action_size = action_size
         
         self.target_entropy = -action_size  # -dim(A)
@@ -192,7 +187,7 @@ class Agent():
         self.alpha_optimizer = optim.Adam(params=[self.log_alpha], lr=args.lr) 
         self._action_prior = action_prior
         
-        self.transitioner = Transitioner(state_size, action_size, hidden_size, encode_size)
+        self.transitioner = Transitioner(obs_size, action_size, hidden_size, encode_size)
         self.trans_optimizer = optim.Adam(self.transitioner.parameters(), lr=args.lr)     
                    
         self.actor = Actor(encode_size, action_size, hidden_size).to(device)
@@ -208,21 +203,21 @@ class Agent():
         self.critic2_target = Critic(encode_size, action_size,hidden_size).to(device)
         self.critic2_target.load_state_dict(self.critic2.state_dict())
 
-        self.memory = RecurrentReplayBuffer(state_size, action_size, max_episode_len = 10000)
+        self.memory = RecurrentReplayBuffer(obs_size, action_size, max_episode_len = 10000)
         
         describe_agent(self)
         
-    def step(self, state, action, reward, next_state, done, step):
-        self.memory.push(state, action, reward, next_state, done, done)
+    def step(self, obs, action, reward, next_obs, done, step):
+        self.memory.push(obs, action, reward, next_obs, done, done)
         if self.memory.num_episodes > args.batch_size:
             trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss = \
                 self.learn()
             return(trans_loss, alpha_loss, actor_loss, critic1_loss, critic2_loss)
         return(None, None, None, None, None)
             
-    def act(self, state, hidden = None):
-        state = torch.from_numpy(state).float().to(device)
-        encoded, hidden = self.transitioner.just_encode(state, hidden)
+    def act(self, obs, hidden = None):
+        obs = torch.from_numpy(obs).float().to(device)
+        encoded, hidden = self.transitioner.just_encode(obs, hidden)
         action = self.actor.get_action(encoded).detach()
         return action, hidden
 
@@ -235,22 +230,24 @@ class Agent():
         
         self.steps += 1
 
-        states, actions, rewards, dones, _ = experiences
+        obss, actions, rewards, dones, _ = experiences
         
         # Train transitioner
-        pred_next_states, _ = self.transitioner.get_next_state(states[:,:-1], actions)
-        trans_loss = F.mse_loss(pred_next_states.to(device), states[:,1:])
+        pred_next_obss, _ = self.transitioner.get_next_obs(obss[:,:-1], actions)
+        trans_loss = F.mse_loss(pred_next_obss.to(device), obss[:,1:])
         self.trans_optimizer.zero_grad()
         trans_loss.backward()
         self.trans_optimizer.step()
         
-        encoded, _ = self.transitioner.just_encode(states[:,:-1])
+        encoded, _ = self.transitioner.just_encode(obss[:,:-1])
         encoded = encoded.detach()
-        next_encoded, _ = self.transitioner.just_encode(states[:,1:])
+        next_encoded, _ = self.transitioner.just_encode(obss[:,1:])
         next_encoded = next_encoded.detach()
         
         # Update rewards with curiosity
-        curiosity = args.eta * self.transitioner.DKL(states[:,:-1], states[:,1:], actions)
+        curiosity = args.eta * self.transitioner.DKL(obss[:,:-1], obss[:,1:], actions)
+        #print()
+        #print(sum(sum(rewards)), sum(sum(curiosity)))
         rewards += curiosity.to(device)
         
         # Train critics
@@ -304,8 +301,8 @@ class Agent():
                 elif self._action_prior == "uniform":
                     policy_prior_log_probs = 0.0
                 Q = torch.min(
-                    self.critic1(states, actions_pred.squeeze(0)), 
-                    self.critic2(states, actions_pred.squeeze(0)))
+                    self.critic1(obss, actions_pred.squeeze(0)), 
+                    self.critic2(obss, actions_pred.squeeze(0)))
                 actor_loss = (args.alpha * log_pis.squeeze(0).cpu() - Q.cpu()- policy_prior_log_probs ).mean()
 
             self.actor_optimizer.zero_grad()
@@ -343,7 +340,7 @@ def describe_agent(agent):
     print("\n\n")
     print(agent.transitioner)
     print()
-    print(torch_summary(agent.transitioner, ((1, agent.state_size),(1,agent.action_size))))
+    print(torch_summary(agent.transitioner, ((1, agent.obs_size),(1,agent.action_size))))
     
     print("\n\n")
     print(agent.actor)
@@ -357,7 +354,7 @@ def describe_agent(agent):
     
 if __name__ == "__main__":
     agent = Agent(
-        state_size = 2,
+        obs_size = 2,
         action_size = 1, 
         hidden_size = args.hidden_size, 
         encode_size = args.encode_size)

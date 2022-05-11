@@ -12,7 +12,7 @@ parser.add_argument("-lr",          type=float, default=5e-4,
                     help="Learning rate of adapting the network weights, default is 5e-4")
 parser.add_argument("-alpha",       type=float, 
                     help="entropy alpha value, if not choosen the value is leaned by the agent")
-parser.add_argument("-eta",         type=float, default = .5,
+parser.add_argument("-eta",         type=float, default = 10,
                     help="curiosity value")
 parser.add_argument("-hidden_size", type=int,   default=256, 
                     help="Number of nodes per neural network layer, default is 256")
@@ -30,8 +30,7 @@ parser.add_argument("-gamma",       type=float, default=0.99,
                     help="discount factor gamma, default is 0.99")
 parser.add_argument("--print_every", type=int, default=100, 
                     help="Prints every x episodes the average reward over x episodes")
-args = parser.parse_args()
-
+args, unknown = parser.parse_known_args()
 
 
 import matplotlib.pyplot as plt
@@ -103,7 +102,7 @@ def plot_losses(
     ax2.legend(loc = 'lower left')
     
     ax3 = ax1.twinx()
-    ax3.spines.right.set_position(("axes", 1.2))
+    #ax3.spines.right.set_position(("axes", 1.2))
     ax3.plot(alpha_x, alpha_y, color = "black", label = "Alpha")
     ax3.set_ylabel("Alpha losses")
     ax3.legend(loc = 'upper right')

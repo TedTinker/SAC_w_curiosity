@@ -1,6 +1,6 @@
+#%%
 import gym
 import time
-import torch
 import numpy as np
 import keyboard
 from collections import deque
@@ -23,7 +23,7 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
         trans_losses_, alpha_losses_, actor_losses_, critic1_losses_, critic2_losses_ = \
             [], [], [], [], []
         for t in range(max_t):
-            #if(keyboard.is_pressed('q')): env.render()
+            if(keyboard.is_pressed('q')): env.render()
             action, hidden = agent.act(state, hidden)
             action_v = action.numpy()
             action_v = np.clip(action_v*action_high, action_low, action_high)
@@ -42,7 +42,7 @@ def SAC(n_episodes=200, max_t=500, print_every=10):
             if done:
                 trans_losses_ = list_mean(trans_losses_)
                 alpha_losses_ = list_mean(alpha_losses_)
-                actor_losses_ = list_mean(actor_losses_)
+                actor_losses_ = list_mean(actor_losses_) 
                 critic1_losses_ = list_mean(critic1_losses_)
                 critic2_losses_ = list_mean(critic2_losses_)
 
@@ -86,3 +86,4 @@ if __name__ == "__main__":
     t1 = time.time()
     env.close()
     print("training took {} min!".format((t1-t0)/60))
+# %%
